@@ -91,6 +91,7 @@ void destroy_f(fila* f){
 }
 
 
+
 sem_t barbearia, cadeiras, vagas_sofa, sofa, barbeiro, caixa, recibo, atendimento; // semaforos para controle 
 pthread_mutex_t mutex_sofa,mutex_pag;	// mutex para acessar buffer
 pthread_cond_t pgto_caixa; //Variavel para controle do pagamento
@@ -108,21 +109,22 @@ void *cliBody (void *id)
       sem_wait(&vagas_sofa);
       pthread_mutex_lock(&mutex_sofa);
       cont_sofa++;
-      sem_wait(&sofa);
       pthread_mutex_unlock(&mutex_sofa);
+      sem_wait(&sofa);
   }
   sem_post(&barbeiro);
   sem_wait(&atendimento);
+  printf("Cliente %ld foi atendido!\n",tid);
+  pthread_mutex_lock(&mutex_sofa);
   if(cont_sofa > 0){
-      pthread_mutex_lock(&mutex_sofa);
       cont_sofa--;
       sem_post(&sofa);
       sem_post(&vagas_sofa);
-      pthread_mutex_unlock(&mutex_sofa);
   }
   else{
       sem_post(&cadeiras);
   }
+  pthread_mutex_unlock(&mutex_sofa);
   pthread_mutex_lock(&mutex_pag);
   push_f(f,tid);
   cont_pag++;
@@ -144,7 +146,6 @@ void *barbBody (void *id)
       sem_wait(&caixa);
   }
 
-  pthread_exit (NULL) ;
 }
 
 
@@ -154,7 +155,7 @@ void *caixaBody (void *id)
   while(1){
       pthread_mutex_lock(&mutex_pag);
       while(cont_pag<1) pthread_cond_wait (&pgto_caixa, &mutex_pag);
-      printf("Recibo: Cliente %ld, Situação: PAGO\n",pop_f(f));
+      printf("Recibo: Cliente %ld, Situação: PAGO!\n",pop_f(f));
       cont_pag--;
       pthread_mutex_unlock(&mutex_pag);
       sem_post(&recibo);
@@ -162,14 +163,13 @@ void *caixaBody (void *id)
 
   }
 
-  pthread_exit (NULL) ;
 }
 
 
 // programa principal
 int main (int argc, char *argv[])
 {
-  pthread_t clientes[NUM_CLI] ;
+  pthread_t clientes[NUM_CLI+1] ;
   pthread_t barbeiros[NUM_BARB] ;
   pthread_t caixat;
   long i ;
@@ -194,7 +194,7 @@ int main (int argc, char *argv[])
 
   pthread_cond_init(&pgto_caixa,NULL);
 
-
+  setvbuf (stdout, 0, _IONBF, 0) ;
    
    if (pthread_create(&caixat,NULL,caixaBody,(void *)1))
     {
@@ -210,13 +210,17 @@ int main (int argc, char *argv[])
     }
 
   // cria clientes
-  for (i=0; i<NUM_CLI; i++)
+  for (i=1; i<NUM_CLI+1; i++)
     if (pthread_create (&clientes[i], NULL, cliBody, (void *) i))
     {
       perror ("pthread_create") ;
       exit (1) ;
     }
   //destroy_f(f);
+  /*while(isEmpty_f(f)!=1){
+    printf("%ld ",pop_f(f));
+  }*/
   // main encerra aqui
+  //pthread_join(caixat, NULL);
   pthread_exit (NULL) ;
 }
