@@ -13,11 +13,10 @@ Problema do Monitor Dorminhoco utilizando semafóros e múltiplas threads
 #define NUM_ESTUDANTES 50
 
 
-pthread_mutex_t mutex_cadeira; // mutex para poder atualizar o valor do número de cadeiras livres
 pthread_mutex_t mutex_sala; // mutex para controlar quem está na sala
 sem_t atendimentoSolicitado; // semáforo para indicar que há estudantes solicitando um atendimento
-sem_t atendimentoFornecido; // semáforo para indicar que o monitor está disponível e um aluno pode entrar na sala
-sem_t cadeiras_livres;
+sem_t atendimentoFornecido; // semáforo para indicar que o monitor terminou o atendimento
+sem_t cadeiras_livres; // semáforo que inicia com o número de cadeiras e indica quantas cadeiras livres estão disponíveis
 long int numero_cadeiras;
 int atendimentosRealizados = 0;
 
@@ -27,12 +26,11 @@ void *threadMonitor (void *id)
   while(1) {
       sem_wait(&atendimentoSolicitado); // escuta o próximo atendimento, dorme enquanto não chegar ninguém
       printf("Monitor tem um atendimento a fazer!\n");
-      usleep(1000);
-      sem_post(&atendimentoFornecido); // finaliza o atendimento
+      sem_post(&atendimentoFornecido); // inicia o atendimento com o aluno
       printf("Monitor terminou de atender!\n");
       atendimentosRealizados++;
       printf("Total de atendimentos até agora: %d\n", atendimentosRealizados);
-      sem_post(&cadeiras_livres); // libera uma das cadeiras que um estudante ocupou
+      
   }
 
   pthread_exit (NULL) ;
@@ -51,23 +49,25 @@ void *threadEstudante (void *id)
 
   // sai do laço while caso hajam cadeiras livres
 
+
   //verifica se o monitor está atendendo alguém ou se está dormindo
 
   if (pthread_mutex_trylock(&mutex_sala) != 0) {
-  printf("Estudante de número %ld ocupou uma cadeira!\n", tid);//ocupa uma das cadeiras porque a sala está ocupada
-  sem_post(&atendimentoSolicitado); // solicita atendimento
-  pthread_mutex_lock(&mutex_sala); //ocupa a sala
-  sem_wait(&atendimentoFornecido); // aguarda o monitor dizer que ele pode entrar
-  pthread_mutex_unlock(&mutex_sala);
+    printf("Estudante de número %ld ocupou uma cadeira!\n", tid);//ocupa uma das cadeiras porque a sala está ocupada
+    sem_post(&atendimentoSolicitado); // solicita atendimento
+    pthread_mutex_lock(&mutex_sala); //ocupa a sala
+    sem_post(&cadeiras_livres); // libera a cadeira em que ele estava
+    sem_wait(&atendimentoFornecido); // aguarda o monitor terminar de atendê-lo
+    pthread_mutex_unlock(&mutex_sala); // sai da sala
   } else { // caso ninguém esteja sendo atendido, apenas entra na sala e acorda o monitor
-    sem_post(&cadeiras_livres); // libera uma cadeira porque ele não precisou sentar nela
-    sem_post(&atendimentoSolicitado); // entra na sala e solicita atendimento
+    sem_post(&cadeiras_livres); // libera uma cadeira instantaneamente porque ele não precisou sentar nela
+    sem_post(&atendimentoSolicitado); // ocupa a sala
     printf("Estudante de número %ld está entrando na sala! Acorda, monitor!\n", tid);
     sem_wait(&atendimentoFornecido); // aguarda o monitor terminar de atendê-lo
-    pthread_mutex_unlock(&mutex_sala); // libera a sala
+    pthread_mutex_unlock(&mutex_sala); // sai da sala
   }
 
-  printf("Estudante de número %ld foi atendido!\n", tid);// monitor atendeu o aluno! agora ele pode ir embora!
+  printf("Estudante de número %ld foi atendido!\n", tid); // monitor atendeu o aluno! agora ele pode ir embora!
 
   pthread_exit (NULL) ;
 }
@@ -90,10 +90,9 @@ int main (int argc, char *argv[])
   sem_init (&atendimentoFornecido, 0, 0) ;
   sem_init (&cadeiras_livres, 0, numero_cadeiras) ;
 
-  pthread_mutex_init(&mutex_cadeira,NULL);
   pthread_mutex_init(&mutex_sala,NULL);
 
-  srand(time(NULL));   // Initialization, should only be called once.
+  srand(time(NULL));
   // cria monitor
   
   if (pthread_create (&monitor, NULL, threadMonitor, (void *) 0))
